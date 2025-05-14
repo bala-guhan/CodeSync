@@ -36,65 +36,15 @@ class TrialAgent:
         self.tools = [
             {"type": "function", "function": {"name": "read_file", "description": "Read content from a file", "parameters": {"type": "object", "properties": {"filepath": {"type": "string", "description": "The path to the file to read"}}, "required": ["filepath"]}}},
             {"type": "function", "function": {"name": "write_file", "description": "Write content to a file", "parameters": {"type": "object", "properties": {"filepath": {"type": "string", "description": "The path of the file to write to"}, "data": {"type": "string", "description": "The content to write into the file"}}, "required": ["filepath", "data"]}}},
-            {"type": "function", "function": {"name": "clone_repo", "description": "This tool takes in a url of a github repo and clones it in the mentioned filepath", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "The URL of the GitHub repository to clone"}, "filepath": {"type": "string", "description": "The path where the repository should be cloned (optional, defaults to repository name in current directory)"}}, "required": ["url"]}}},
             {"type": "function", "function": {"name": "list_directory", "description": "List contents of a directory with file types and sizes", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The path to the directory to list"}}, "required": ["path"]}}},
             {"type": "function", "function": {"name": "replace_function_in_file", "description": "Replaces old function code in a Python file with new code.", "parameters": {"type": "object", "properties": {"file_path": {"type": "string", "description": "The path to the Python file to modify"}, "old_code": {"type": "string", "description": "The original function code to replace"}, "new_code": {"type": "string", "description": "The new function code to insert"}}, "required": ["file_path", "old_code", "new_code"]}}},
             {"type": "function", "function": {"name": "extract_relevant_function", "description": "Extracts the most relevant function from source code using keyword overlap with a problem description.", "parameters": {"type": "object", "properties": {"file_content": {"type": "string", "description": "The full source code of a Python file"}, "problem_description": {"type": "string", "description": "Description of the bug or issue to match against functions"}}, "required": ["file_content", "problem_description"]}}},
             {"type": "function", "function": {"name": "run_inline_tests_against_module", "description": "Runs test cases (as code strings) against a specified Python file and returns pass/fail results.", "parameters": {"type": "object", "properties": {"filepath": {"type": "string", "description": "Path to the Python file to be tested"}, "fail_to_pass": {"type": "string", "description": "Test code string expected to fail before a fix and pass after"}, "pass_to_pass": {"type": "string", "description": "Test code string expected to always pass"}}, "required": ["filepath", "fail_to_pass", "pass_to_pass"]}}}
         ]
         self.toolkit = [tool['function']['name'] for tool in self.tools]
-
-        # Create a list of tool names for easy searching
         self.tool_names = [tool['function']['name'] for tool in self.tools]
 
-    
-def run_inline_tests_against_module(filepath: str, fail_to_pass: str, pass_to_pass: str) -> Dict[str, Dict[str, int]]:
-    """
-    Runs test cases (passed as strings) against the specified Python file.
-
-    Args:
-        filepath (str): Path to the Python file to be tested.
-        fail_to_pass (str): String containing a test case expected to fail before a fix and pass after.
-        pass_to_pass (str): String containing a test case expected to always pass.
-
-    Returns:
-        dict: Summary of test results for both test types.
-    """
-    results = {}
-
-    def run_test_block(test_code: str, label: str) -> Dict[str, int]:
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as test_file:
-            test_file_path = test_file.name
-
-            # Write sys.path adjustment and test code
-            module_dir = os.path.abspath(os.path.dirname(filepath))
-            test_file.write("import sys\n")
-            test_file.write(f"sys.path.insert(0, r'{module_dir}')\n\n")
-            test_file.write(test_code)
-
-        # Run pytest on the temp test file
-        try:
-            result = subprocess.run(
-                ["pytest", "--disable-warnings", "-q", test_file_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            output = result.stdout + result.stderr
-            passed = output.count(" PASSED")
-            failed = output.count(" FAILED")
-
-        finally:
-            os.remove(test_file_path)
-
-        return {"passed": passed, "failed": failed}
-
-    results["fail_to_pass"] = run_test_block(fail_to_pass, "fail_to_pass")
-    results["pass_to_pass"] = run_test_block(pass_to_pass, "pass_to_pass")
-
-    return results
-
-        
+            
     def list_directory(self, path: str) -> str:
         """List contents of a directory with file types and sizes"""
         try:
@@ -112,39 +62,7 @@ def run_inline_tests_against_module(filepath: str, fail_to_pass: str, pass_to_pa
         except Exception as e:
             return f"Error listing directory: {str(e)}"
 
-    def clone_repo(self, url: str, filepath: str = "") -> str:
-        """This tool takes in a url of a github repo and clones it in the mentioned filepath"""
-        import git
-        import requests
-        
-        try:
-            # Check if the repository exists
-            response = requests.head(url)
-            if response.status_code != 200:
-                return f"Repository does not exist or is inaccessible: {url}"
-            
-            # If filepath is empty, use the repo name from the URL
-            if not filepath:
-                repo_name = url.split('/')[-1].replace('.git', '')
-                filepath = pathlib.Path.cwd() / repo_name
-            else:
-                filepath = pathlib.Path(filepath)
-            
-            # Check if the filepath already exists
-            if filepath.exists():
-                return f"Directory already exists at {filepath}. Please choose a different filepath."
-            
-            # Clone the repository
-            git.Repo.clone_from(url, str(filepath))
-            print(f"Cloned repository from {url} to {filepath}")
-            return f"Successfully cloned repository to {filepath}"
-        except git.exc.GitCommandError as e:
-            return f"Failed to clone repository: {str(e)}"
-        except requests.RequestException as e:
-            return f"Failed to verify repository: {str(e)}"
-        except Exception as e:
-            return f"An error occurred: {str(e)}"
-
+    
     def read_file(self, filepath: str) -> str:
         """Read content from a file"""
         try:
@@ -214,6 +132,7 @@ def run_inline_tests_against_module(filepath: str, fail_to_pass: str, pass_to_pa
         best_score, best_func, best_name = candidates[0]
 
         print(f"[INFO] Top match: {best_name} with score {best_score}")
+
         return best_func
 
     def replace_function_in_file(file_path: str, old_code: str, new_code: str) -> bool:
@@ -238,8 +157,7 @@ def run_inline_tests_against_module(filepath: str, fail_to_pass: str, pass_to_pa
     def show_available_tools(self):
         """displays available tools"""
         for tool in self.tools:
-            print(f"Tool : {tool['function']['name']}")
-            print(f"Description ; {tool['function']['description']}")
+            print(f"Tool : {tool['function']['name']} : {tool['function']['description']}")
 
     def call_llm(self, messages, tool_name):
         """Tool-call generating LLM (has tool schema attached)"""
@@ -440,27 +358,78 @@ def run_inline_tests_against_module(filepath: str, fail_to_pass: str, pass_to_pa
         log_response = self.save_chat_as_html(self.chat_history)
         print(log_response)
 
+    def check_and_edit(self, filepath: str, problem_description: str, PASS_TO_PASS: str, FAIL_TO_PASS: str):
+        """
+        Analyzes a file, finds relevant code, gets fixes from LLM, applies changes and tests them.
+        
+        Args:
+            filepath (str): Path to the Python file to analyze and fix
+            problem_description (str): Description of the bug/issue to fix
+            PASS_TO_PASS (str): Test case that should always pass
+            FAIL_TO_PASS (str): Test case that should fail before fix and pass after
+            
+        Returns:
+            dict: Results of the fix attempt including test results and any errors
+        """
+        try:
+            # Step 1: Read the file content
+            file_content = self.read_file(filepath)
+            if "Error" in file_content:
+                return {"error": f"Failed to read file: {file_content}"}
+            
+            # Step 2: Extract the relevant function using the problem description
+            relevant_function = self.extract_relevant_function(file_content, problem_description)
+            if not relevant_function:
+                return {"error": "No relevant function found matching the problem description"}
+            
+            # Step 3: Get LLM's suggested fix
+            fix_prompt = f"""Given this code and problem description, provide a fixed version of the function.
+            Only return the complete fixed function code, nothing else.
+            
+            Problem Description:
+            {problem_description}
+            
+            Original Code:
+            {relevant_function}
+
+            only provide the code without any other text. No explanations or any extra characters except the corrected code
+            <output_format>
+            def rectified_function():
+                # code here
+            </output_format>
+            """
+            
+            fix_response = self.call_llm_without_llm([{"role": "user", "content": fix_prompt}])
+            fixed_code = fix_response['choices'][0]['message']['content'].strip()
+            
+            # Step 4: Replace the old code with the fixed code
+            if not self.replace_function_in_file(filepath, relevant_function, fixed_code):
+                return {"error": "Failed to replace the function in the file"}
+            
+            # Step 5: Run tests to verify the fix
+            test_results = self.run_inline_tests_against_module(
+                filepath=filepath,
+                fail_to_pass=FAIL_TO_PASS,
+                pass_to_pass=PASS_TO_PASS
+            )
+            
+            # Step 6: Return comprehensive results
+            return {
+                "status": "success",
+                "original_function": relevant_function,
+                "fixed_function": fixed_code,
+                "test_results": test_results,
+                "message": "Fix applied and tested successfully"
+            }
+            
+        except Exception as e:
+            import traceback
+            return {
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
 
 if __name__ == '__main__':
     agent = TrialAgent()
-
-    old_code = """
-def expand_expression(expr_str):
-    x = symbols('x')
-    try:
-        expr = expand(expr_str)
-        return expr
-    except Exception as e:
-        print("Error while expanding expression:", e)
-        return None
-"""
-    filepath = "mock_swe_bench/symbolic_solver.py"
-    new_code = """def hello_world():
-    print("Hello, World!")
-    """
     
-    try:
-        agent.replace_function_in_file(filepath, old_code, new_code)
-        print("Function replaced successfully!")
-    except Exception as e:
-        print(f"Error occurred while replacing function: {e}")
